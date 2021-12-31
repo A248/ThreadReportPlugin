@@ -1,0 +1,10 @@
+name: ThreadReport
+main: space.arim.threadreport.ThreadReportPlugin
+author: A248
+version: ${project.version}
+api-version: 1.13
+
+commands:
+  threadreport:
+    aliases: []
+    usage: /threadreport
