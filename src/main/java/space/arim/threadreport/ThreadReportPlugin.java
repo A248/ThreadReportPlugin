@@ -5,29 +5,32 @@ import org.bukkit.command.CommandSender;
 import org.bukkit.command.ConsoleCommandSender;
 import org.bukkit.plugin.java.JavaPlugin;
 
-import java.io.BufferedWriter;
 import java.io.IOException;
 import java.io.UncheckedIOException;
-import java.lang.management.ManagementFactory;
-import java.lang.management.ThreadInfo;
-import java.lang.management.ThreadMXBean;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardOpenOption;
+import java.time.Duration;
 
 public final class ThreadReportPlugin extends JavaPlugin {
 
+	private ThreadDumpDestination manualDestination;
+	private ThreadDumpDestination periodicDestination;
+
+	private Task task;
+
 	@Override
 	public void onEnable() {
+		Path dataFolder = getDataFolder().toPath();
+		Path manualDestination = dataFolder.resolve("by-command");
+		Path periodicDestination = dataFolder.resolve("by-periodic-task");
 		try {
-			Files.createDirectories(dataFolder());
+			Files.createDirectories(manualDestination);
+			Files.createDirectories(periodicDestination);
 		} catch (IOException ex) {
 			throw new UncheckedIOException(ex);
 		}
-	}
-
-	private Path dataFolder() {
-		return getDataFolder().toPath();
+		this.manualDestination = new ThreadDumpDestination(manualDestination);
+		this.periodicDestination = new ThreadDumpDestination(periodicDestination);
 	}
 
 	@Override
@@ -36,31 +39,21 @@ public final class ThreadReportPlugin extends JavaPlugin {
 			sender.sendMessage("This must be run from the console");
 			return true;
 		}
-		Path destination = freeFile();
-		threadDump(destination);
-		sender.sendMessage("Thread dump saved to " + destination);
+		if (args.length == 1 && args[0].equalsIgnoreCase("task")) {
+			if (task == null) {
+				task = new Task(Duration.ofSeconds(5L), periodicDestination);
+				task.start();
+				sender.sendMessage("Started the task. An automatic thread dump will be taken every 5 seconds");
+			} else {
+				task.cancel();
+				task = null;
+				sender.sendMessage("Ended the task.");
+			}
+			return true;
+		}
+		// Perform this on the main thread: We want a true snapshot at this exact time, without delay
+		manualDestination.performThreadDump();
 		return true;
 	}
 
-	private Path freeFile() {
-		Path dataFolder = dataFolder();
-		Path freeFile;
-		int number = 0;
-		do {
-			freeFile = dataFolder.resolve("thread-dump-" + number++ + ".txt");
-		} while (Files.exists(freeFile));
-		return freeFile;
-	}
-
-	private void threadDump(Path destination) {
-		try (BufferedWriter writer = Files.newBufferedWriter(destination, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE)) {
-			ThreadMXBean threadMXBean = ManagementFactory.getThreadMXBean();
-			for (ThreadInfo threadInfo : threadMXBean.dumpAllThreads(true, true)) {
-				writer.append(threadInfo.toString());
-				writer.append('\n');
-			}
-		} catch (IOException ex) {
-			throw new UncheckedIOException(ex);
-		}
-	}
 }
